@@ -1,0 +1,845 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <!-- تم إصلاح مشكلة Accessibility بإزالة user-scalable=no و maximum-scale=1.0 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>متاهة النيون: الهروب الكمي</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@0.330.0"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;700;900&display=swap');
+        
+        :root {
+            --cyan-glow: rgba(6, 182, 212, 0.6);
+            --purple-glow: rgba(217, 70, 239, 0.6);
+            --rose-glow: rgba(225, 29, 72, 0.6);
+            --emerald-glow: rgba(16, 185, 129, 0.6);
+        }
+
+        body { 
+            font-family: 'Cairo', sans-serif; 
+            background: #050508; 
+            margin: 0; 
+            padding: 0; 
+            overscroll-behavior: none;
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            min-height: 100dvh;
+        }
+
+        .mobile-container { 
+            width: 100vw; 
+            height: 100vh; 
+            height: 100dvh;
+            max-width: 480px; 
+            display: flex; 
+            flex-direction: column; 
+            background: radial-gradient(circle at top, #11111a 0%, #050508 100%);
+            border-left: 1px solid #1a1a2e;
+            border-right: 1px solid #1a1a2e;
+            box-shadow: 0 0 50px rgba(0,0,0,0.9);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .d-pad-btn {
+            background: #11111a; border: 1px solid #2a2a3e; border-radius: 12px;
+            display: flex; justify-content: center; align-items: center;
+            transition: all 0.1s;
+            touch-action: manipulation;
+            user-select: none;
+        }
+        .d-pad-btn:active { background: #06b6d4; color: #000; transform: scale(0.9); }
+
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px) rotate(-1deg); }
+            50% { transform: translateX(5px) rotate(1deg); }
+            75% { transform: translateX(-5px) rotate(-1deg); }
+        }
+        .damage-shake { animation: shake 0.3s ease-in-out; filter: hue-rotate(90deg); }
+
+        .screen-layer {
+            position: absolute; inset: 0; display: flex; flex-direction: column;
+            transition: opacity 0.4s, transform 0.4s;
+            padding: env(safe-area-inset-top) 20px env(safe-area-inset-bottom) 20px;
+        }
+        .hidden-layer { opacity: 0; transform: scale(0.95); pointer-events: none; z-index: -1; }
+        .active-layer { opacity: 1; transform: scale(1); z-index: 10; }
+
+        .grid-memory { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; max-width: 280px; margin: 0 auto; }
+        .cell-memory { aspect-ratio: 1; background: #11111a; border: 2px solid #2a2a3e; border-radius: 16px; transition: all 0.2s; touch-action: manipulation; }
+        .cell-memory.active { background: #06b6d4; box-shadow: 0 0 20px var(--cyan-glow); border-color: #fff; transform: scale(1.05); }
+
+        .grid-mine { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; max-width: 320px; margin: 0 auto; background: #0a0a0f; padding: 6px; border-radius: 12px; border: 1px solid #2a2a3e; }
+        .cell-mine { aspect-ratio: 1; background: #151520; border-radius: 6px; transition: background 0.2s; }
+        .cell-player { background: #10b981; box-shadow: 0 0 10px var(--emerald-glow); }
+        .cell-enemy { background: #ef4444; box-shadow: 0 0 15px var(--rose-glow); border-radius: 50%; transform: scale(0.8); }
+        .cell-mine-trap { background: #7f1d1d; border: 1px solid #dc2626; opacity: 0.8; }
+        .cell-exit { background: #3b82f6; box-shadow: 0 0 15px var(--cyan-glow); animation: pulse 1s infinite; }
+
+        .grid-sync { display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; max-width: 300px; margin: 0 auto; background: #0a0a0f; padding: 6px; border-radius: 12px; border: 1px solid #2a2a3e; }
+        .cell-sync { aspect-ratio: 1; background: #151520; border-radius: 6px; transition: background 0.1s; }
+        .cell-wall { background: #1e1e2d; border: 1px solid #333; }
+        .cell-p1 { background: #06b6d4; box-shadow: 0 0 10px var(--cyan-glow); }
+        .cell-p2 { background: #d946ef; box-shadow: 0 0 10px var(--purple-glow); }
+        .cell-sync-overlap { background: #fff; box-shadow: 0 0 20px rgba(255,255,255,0.8); }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+        
+        .hud-text { font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body>
+
+    <div id="game-container" class="mobile-container">
+        
+        <!-- HUD -->
+        <div id="game-header" class="hidden flex-col z-20 bg-[#050508]/90 backdrop-blur-md border-b border-[#1a1a2e] pt-safe">
+            <div class="flex justify-between items-center p-3 text-xs">
+                <div class="flex items-center gap-3">
+                    <button onclick="Game.togglePause()" class="p-2 bg-[#11111a] rounded-lg border border-[#2a2a3e] active:scale-95"><i data-lucide="pause" class="w-4 h-4 text-gray-300"></i></button>
+                    <button onclick="AudioSys.toggle()" class="p-2 bg-[#11111a] rounded-lg border border-[#2a2a3e] active:scale-95"><i id="sound-icon" data-lucide="volume-2" class="w-4 h-4 text-cyan-400"></i></button>
+                </div>
+                <div class="text-right">
+                    <div class="text-gray-400">النقاط: <span id="score-display" class="text-cyan-400 font-bold hud-text">0</span></div>
+                    <div class="text-[10px] text-gray-500">الأفضل: <span id="highscore-display" class="hud-text">0</span></div>
+                </div>
+            </div>
+            <div class="flex justify-between items-center px-4 pb-3">
+                <div class="flex items-center gap-1.5 text-cyan-400 text-sm font-bold">
+                    <i data-lucide="layers" class="w-4 h-4"></i> <span id="stage-display">مرحلة 1</span>
+                </div>
+                <div class="flex items-center gap-1.5 text-gray-300 text-sm hud-text">
+                    <i data-lucide="clock" class="w-4 h-4"></i> <span id="timer-display">00:00</span>
+                </div>
+                <div id="lives-display" class="flex gap-1 text-rose-500"></div>
+            </div>
+        </div>
+
+        <!-- القائمة الرئيسية -->
+        <div id="screen-menu" class="screen-layer active-layer justify-center text-center">
+            <div class="space-y-6">
+                <i data-lucide="hexagon" class="w-24 h-24 mx-auto text-cyan-500 animate-pulse"></i>
+                <div>
+                    <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 mb-2">متاهة النيون</h1>
+                    <p class="text-xs text-gray-400">الهروب الكمي (Cyber Escape)</p>
+                </div>
+                <div class="bg-[#11111a] p-4 rounded-xl border border-[#2a2a3e] text-xs text-gray-300 space-y-2 text-right">
+                    <p><strong class="text-cyan-400">• المهمة:</strong> اختراق 3 مراحل معقدة.</p>
+                    <p><strong class="text-rose-400">• الخطر:</strong> الموت الدائم، الفشل يعيدك للصفر.</p>
+                </div>
+                <button onclick="Game.showDifficulty()" class="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-black font-black text-lg rounded-xl shadow-[0_0_20px_rgba(6,182,212,0.4)] transition-all active:scale-95">
+                    بدء الاختراق
+                </button>
+            </div>
+            <div class="absolute bottom-4 left-0 right-0 text-center pointer-events-none">
+                <p class="text-[10px] font-bold text-gray-500 tracking-widest">تصميم ايمن رعد</p>
+            </div>
+        </div>
+
+        <!-- اختيار الصعوبة -->
+        <div id="screen-difficulty" class="screen-layer hidden-layer justify-center text-center">
+            <h2 class="text-2xl font-bold text-cyan-300 mb-6">حدد مستوى النظام</h2>
+            <div class="space-y-4">
+                <button onclick="Game.start('EASY')" class="w-full py-4 bg-[#11111a] border border-[#2a2a3e] hover:border-emerald-500 text-emerald-400 font-bold rounded-xl transition-all active:scale-95">
+                    سهل (5 أرواح، وتيرة بطيئة)
+                </button>
+                <button onclick="Game.start('NORMAL')" class="w-full py-4 bg-[#11111a] border border-[#2a2a3e] hover:border-cyan-500 text-cyan-400 font-bold rounded-xl transition-all active:scale-95 shadow-[0_0_15px_rgba(6,182,212,0.2)]">
+                    عادي (3 أرواح، تحدي متوازن)
+                </button>
+                <button onclick="Game.start('HARD')" class="w-full py-4 bg-[#11111a] border border-[#2a2a3e] hover:border-rose-500 text-rose-500 font-bold rounded-xl transition-all active:scale-95">
+                    خبير (روح واحدة، أعداء أذكياء)
+                </button>
+                <button onclick="Game.showMenu()" class="w-full py-3 mt-4 text-gray-400 text-sm underline active:text-white">عودة</button>
+            </div>
+        </div>
+
+        <!-- Stage 1 -->
+        <div id="screen-stage1" class="screen-layer hidden-layer justify-between">
+            <div class="text-center mt-4">
+                <h2 class="text-xl font-bold text-cyan-300 mb-1">المرحلة 1: فك الشفرة</h2>
+                <p class="text-xs text-gray-400">احفظ مسار الإضاءة وأعد تكراره بدقة.</p>
+            </div>
+            <div class="flex-1 flex items-center justify-center">
+                <div id="s1-grid" class="grid-memory w-full"></div>
+            </div>
+            <div class="mb-8">
+                <button id="s1-btn" onclick="Stage1.startSequence()" class="w-full py-3 bg-[#1a1a2e] border border-cyan-500 text-cyan-400 font-bold rounded-xl active:scale-95 transition-all">
+                    بدء نقل البيانات
+                </button>
+            </div>
+        </div>
+
+        <!-- Stage 2 -->
+        <div id="screen-stage2" class="screen-layer hidden-layer justify-between">
+            <div class="text-center mt-2">
+                <h2 class="text-xl font-bold text-cyan-300 mb-1">المرحلة 2: حقل الألغام</h2>
+                <p class="text-xs text-gray-400">تجنب الألغام الثابتة (الأحمر الداكن) والبرامج الخبيثة المطاردة!</p>
+            </div>
+            <div class="flex-1 flex items-center justify-center">
+                <div id="s2-grid" class="grid-mine w-full"></div>
+            </div>
+            <div id="dpad-s2" class="mb-4 mx-auto w-48 h-48 grid grid-cols-3 grid-rows-3 gap-2">
+                <div></div>
+                <button class="d-pad-btn" onclick="InputSys.trigger('UP')"><i data-lucide="chevron-up"></i></button>
+                <div></div>
+                <button class="d-pad-btn" onclick="InputSys.trigger('RIGHT')"><i data-lucide="chevron-right"></i></button> 
+                <button class="d-pad-btn bg-[#1a1a2e]"><i data-lucide="target" class="w-4 h-4 text-cyan-500"></i></button>
+                <button class="d-pad-btn" onclick="InputSys.trigger('LEFT')"><i data-lucide="chevron-left"></i></button>
+                <div></div>
+                <button class="d-pad-btn" onclick="InputSys.trigger('DOWN')"><i data-lucide="chevron-down"></i></button>
+                <div></div>
+            </div>
+        </div>
+
+        <!-- Stage 3 -->
+        <div id="screen-stage3" class="screen-layer hidden-layer justify-between">
+            <div class="text-center mt-1">
+                <h2 class="text-xl font-bold text-cyan-300 mb-1">المرحلة 3: التوازن المتزامن</h2>
+                <p class="text-[10px] text-gray-400 leading-tight">النقطتان تتحركان معاً (الحركة الأفقية معكوسة). اصطدام إحداهما بالجدار يعرضك للخطر. أوصل النقطتين لمخرجيهما.</p>
+            </div>
+            <div class="flex-1 flex items-center justify-center">
+                <div id="s3-grid" class="grid-sync w-full"></div>
+            </div>
+            <div id="dpad-s3" class="mb-4 mx-auto w-48 h-48 grid grid-cols-3 grid-rows-3 gap-2">
+                <div></div>
+                <button class="d-pad-btn" onclick="InputSys.trigger('UP')"><i data-lucide="chevron-up"></i></button>
+                <div></div>
+                <button class="d-pad-btn" onclick="InputSys.trigger('RIGHT')"><i data-lucide="chevron-right"></i></button>
+                <button class="d-pad-btn bg-[#1a1a2e]"><i data-lucide="link" class="w-4 h-4 text-purple-500"></i></button>
+                <button class="d-pad-btn" onclick="InputSys.trigger('LEFT')"><i data-lucide="chevron-left"></i></button>
+                <div></div>
+                <button class="d-pad-btn" onclick="InputSys.trigger('DOWN')"><i data-lucide="chevron-down"></i></button>
+                <div></div>
+            </div>
+        </div>
+
+        <!-- شاشات التوقف والنهاية -->
+        <div id="screen-pause" class="screen-layer hidden-layer justify-center text-center bg-[#050508]/95 z-50">
+            <div class="space-y-4">
+                <i data-lucide="pause-circle" class="w-20 h-20 mx-auto text-cyan-500"></i>
+                <h1 class="text-3xl font-black text-cyan-400 mb-6">إيقاف مؤقت</h1>
+                <button onclick="Game.resume()" class="w-full py-4 bg-cyan-600 text-black font-bold rounded-xl active:scale-95">استئناف اللعب</button>
+                <button onclick="Game.quitToMenu()" class="w-full py-4 bg-[#11111a] border border-[#2a2a3e] text-gray-300 font-bold rounded-xl active:scale-95">الخروج للقائمة</button>
+            </div>
+        </div>
+
+        <div id="screen-gameover" class="screen-layer hidden-layer justify-center text-center bg-rose-950/95 z-50">
+            <div class="space-y-4">
+                <i data-lucide="skull" class="w-24 h-24 mx-auto text-rose-500"></i>
+                <h1 class="text-4xl font-black text-rose-500 mb-2">النظام انهار!</h1>
+                <p class="text-sm text-gray-300">تم رصد الاختراق. النقاط النهائية: <span id="go-score" class="text-white font-bold">0</span></p>
+                <button onclick="Game.showMenu()" class="mt-6 w-full py-4 bg-rose-600 text-white font-bold rounded-xl active:scale-95">إعادة التشغيل</button>
+            </div>
+        </div>
+
+        <div id="screen-victory" class="screen-layer hidden-layer justify-center text-center bg-cyan-950/95 z-50">
+            <div class="space-y-4">
+                <i data-lucide="award" class="w-24 h-24 mx-auto text-yellow-400"></i>
+                <h1 class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-yellow-500 mb-2">تم الاختراق!</h1>
+                <p class="text-sm text-gray-300">النقاط الإجمالية: <span id="vic-score" class="text-white font-bold text-lg">0</span></p>
+                <button onclick="Game.showMenu()" class="mt-6 w-full py-4 bg-cyan-600 text-black font-bold rounded-xl active:scale-95">العودة للقائمة</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ==========================================
+        // 1. نظام إدارة المؤقتات المركزي (يدعم التوقف المؤقت Pause)
+        // ==========================================
+        const TimerManager = {
+            timers: new Set(),
+            intervals: new Set(),
+            lastTime: 0,
+            rafId: null,
+
+            start() {
+                this.lastTime = performance.now();
+                const loop = (time) => {
+                    const dt = time - this.lastTime;
+                    this.lastTime = time;
+                    // المؤقتات تستمر بالعمل فقط أثناء اللعب (أو خلال الـ Transition)
+                    if (Game.state === 'PLAYING') {
+                        this.update(dt);
+                    }
+                    this.rafId = requestAnimationFrame(loop);
+                };
+                this.rafId = requestAnimationFrame(loop);
+            },
+
+            update(dt) {
+                this.timers.forEach(t => {
+                    t.elapsed += dt;
+                    if (t.elapsed >= t.delay) {
+                        t.cb();
+                        this.timers.delete(t);
+                    }
+                });
+                this.intervals.forEach(i => {
+                    i.elapsed += dt;
+                    if (i.elapsed >= i.delay) {
+                        i.cb();
+                        i.elapsed = 0;
+                    }
+                });
+            },
+
+            setTimeout(cb, delay) {
+                const t = { cb, delay, elapsed: 0 };
+                this.timers.add(t);
+                return t;
+            },
+
+            setInterval(cb, delay) {
+                const i = { cb, delay, elapsed: 0 };
+                this.intervals.add(i);
+                return i;
+            },
+
+            clearAll() {
+                this.timers.clear();
+                this.intervals.clear();
+            }
+        };
+
+        // ==========================================
+        // 2. نظام الصوت
+        // ==========================================
+        const AudioSys = {
+            ctx: null,
+            enabled: true,
+            init() { if(!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); },
+            toggle() {
+                this.enabled = !this.enabled;
+                document.getElementById('sound-icon').setAttribute('data-lucide', this.enabled ? 'volume-2' : 'volume-x');
+                lucide.createIcons();
+            },
+            play(freq, type, duration) {
+                if(!this.enabled) return;
+                this.init();
+                const osc = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                osc.type = type;
+                osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+                osc.connect(gain);
+                gain.connect(this.ctx.destination);
+                osc.start();
+                gain.exponentialRampToValueAtTime(0.00001, this.ctx.currentTime + duration);
+                osc.stop(this.ctx.currentTime + duration);
+            },
+            beep() { this.play(600, 'sine', 0.1); },
+            error() { this.play(150, 'sawtooth', 0.3); },
+            win() { 
+                this.play(800, 'triangle', 0.2); 
+                // تم استبدال setTimeout النيتف بنظام الـ TimerManager
+                TimerManager.setTimeout(() => this.play(1200, 'triangle', 0.4), 100); 
+            }
+        };
+
+        // ==========================================
+        // 3. نظام الإدخال
+        // ==========================================
+        const InputSys = {
+            isRTL: document.documentElement.dir === 'rtl',
+            init() {
+                window.addEventListener('keydown', (e) => {
+                    if(Game.state !== 'PLAYING') return;
+                    let dir = null;
+                    if(e.key === 'ArrowUp') dir = 'UP';
+                    else if(e.key === 'ArrowDown') dir = 'DOWN';
+                    else if(e.key === 'ArrowRight') dir = 'RIGHT';
+                    else if(e.key === 'ArrowLeft') dir = 'LEFT';
+                    
+                    if(dir) { e.preventDefault(); this.trigger(dir); }
+                });
+            },
+            trigger(dir) {
+                if(Game.state !== 'PLAYING' || Game.isTransitioning) return;
+                let dr = 0, dc = 0;
+                if(dir === 'UP') dr = -1;
+                else if(dir === 'DOWN') dr = 1;
+                else if(dir === 'RIGHT') dc = this.isRTL ? -1 : 1;
+                else if(dir === 'LEFT') dc = this.isRTL ? 1 : -1;
+
+                if(Game.currentStage === 2) Stage2.move(dr, dc);
+                else if(Game.currentStage === 3) Stage3.move(dr, dc);
+            }
+        };
+
+        // ==========================================
+        // 4. نظام حالة اللعبة
+        // ==========================================
+        const Game = {
+            state: 'MENU', 
+            isTransitioning: false,
+            difficulty: 'NORMAL',
+            currentStage: 1,
+            lives: 3,
+            score: 0,
+            highScore: localStorage.getItem('cyber_escape_highscore') || 0,
+            elapsedTime: 0,
+            
+            init() {
+                TimerManager.start(); // تشغيل المحرك
+                document.getElementById('highscore-display').innerText = this.highScore;
+                InputSys.init();
+                Stage1.initDOM();
+                Stage2.initDOM();
+                Stage3.initDOM();
+                lucide.createIcons();
+            },
+
+            switchScreen(screenId) {
+                document.querySelectorAll('.screen-layer').forEach(el => {
+                    el.classList.remove('active-layer');
+                    el.classList.add('hidden-layer');
+                });
+                document.getElementById(screenId).classList.remove('hidden-layer');
+                document.getElementById(screenId).classList.add('active-layer');
+            },
+
+            showMenu() {
+                this.state = 'MENU';
+                TimerManager.clearAll();
+                document.getElementById('game-header').classList.add('hidden');
+                document.getElementById('game-header').classList.remove('flex');
+                this.switchScreen('screen-menu');
+            },
+
+            showDifficulty() { this.switchScreen('screen-difficulty'); },
+
+            start(diff) {
+                this.difficulty = diff;
+                this.lives = diff === 'EASY' ? 5 : (diff === 'NORMAL' ? 3 : 1);
+                this.currentStage = 1;
+                this.score = 0;
+                this.elapsedTime = 0;
+                this.isTransitioning = false;
+                this.state = 'PLAYING';
+                
+                document.getElementById('game-header').classList.remove('hidden');
+                document.getElementById('game-header').classList.add('flex');
+                
+                TimerManager.clearAll();
+                TimerManager.setInterval(() => this.tick(), 1000);
+                
+                this.updateHUD();
+                this.loadStage();
+            },
+
+            tick() {
+                this.elapsedTime++;
+                const m = String(Math.floor(this.elapsedTime / 60)).padStart(2, '0');
+                const s = String(this.elapsedTime % 60).padStart(2, '0');
+                document.getElementById('timer-display').innerText = `${m}:${s}`;
+            },
+
+            updateHUD() {
+                document.getElementById('score-display').innerText = this.score;
+                document.getElementById('stage-display').innerText = `مرحلة ${this.currentStage} / 3`;
+                const hearts = document.getElementById('lives-display');
+                hearts.innerHTML = '';
+                const maxLives = this.difficulty === 'EASY' ? 5 : (this.difficulty === 'NORMAL' ? 3 : 1);
+                for(let i=0; i < maxLives; i++) {
+                    hearts.innerHTML += `<i data-lucide="heart" class="w-5 h-5 ${i < this.lives ? 'fill-current' : 'opacity-30'}"></i>`;
+                }
+                lucide.createIcons();
+            },
+
+            takeDamage() {
+                if(this.state !== 'PLAYING' || this.isTransitioning) return;
+                AudioSys.error();
+                this.lives--;
+                this.updateHUD();
+                
+                const container = document.getElementById('game-container');
+                container.classList.add('damage-shake');
+                setTimeout(() => container.classList.remove('damage-shake'), 300);
+
+                if(this.lives <= 0) {
+                    this.gameOver();
+                } else {
+                    this.isTransitioning = true;
+                    // الـ Timer سيقفز التحديثات أثناء الإيقاف المؤقت (Pause)، وسيكمل بشكل سليم عند الاستئناف
+                    TimerManager.setTimeout(() => {
+                        this.isTransitioning = false;
+                        if(this.currentStage === 1) Stage1.reset();
+                        else if(this.currentStage === 2) Stage2.resetPlayer();
+                        else if(this.currentStage === 3) Stage3.resetPlayer();
+                    }, 500);
+                }
+            },
+
+            stageCleared() {
+                if(this.state !== 'PLAYING' || this.isTransitioning) return;
+                this.isTransitioning = true;
+                AudioSys.win();
+                
+                let stagePoints = 1000;
+                let diffMulti = this.difficulty === 'HARD' ? 3 : (this.difficulty === 'NORMAL' ? 2 : 1);
+                this.score += (stagePoints * diffMulti);
+                this.updateHUD();
+
+                TimerManager.setTimeout(() => {
+                    this.isTransitioning = false;
+                    this.currentStage++;
+                    if(this.currentStage > 3) this.victory();
+                    else {
+                        this.updateHUD();
+                        this.loadStage();
+                    }
+                }, 1000);
+            },
+
+            loadStage() {
+                if(this.currentStage === 1) Stage1.init();
+                else if(this.currentStage === 2) Stage2.init();
+                else if(this.currentStage === 3) Stage3.init();
+            },
+
+            togglePause() {
+                if(this.state === 'PLAYING' && !this.isTransitioning) {
+                    this.state = 'PAUSED';
+                    this.switchScreen('screen-pause');
+                }
+            },
+            
+            resume() {
+                if(this.state === 'PAUSED') {
+                    this.state = 'PLAYING';
+                    this.switchScreen(`screen-stage${this.currentStage}`);
+                }
+            },
+
+            quitToMenu() {
+                this.showMenu();
+            },
+
+            gameOver() {
+                this.state = 'GAMEOVER';
+                document.getElementById('go-score').innerText = this.score;
+                document.getElementById('game-header').classList.add('hidden');
+                this.switchScreen('screen-gameover');
+            },
+
+            victory() {
+                this.state = 'VICTORY';
+                this.score += (this.lives * 500);
+                document.getElementById('vic-score').innerText = this.score;
+                
+                if(this.score > this.highScore) {
+                    this.highScore = this.score;
+                    localStorage.setItem('cyber_escape_highscore', this.highScore);
+                    document.getElementById('highscore-display').innerText = this.highScore;
+                }
+                
+                document.getElementById('game-header').classList.add('hidden');
+                this.switchScreen('screen-victory');
+            }
+        };
+
+        // ==========================================
+        // 5. هندسة المراحل
+        // ==========================================
+
+        const Stage1 = {
+            cells: [], sequence: [], step: 0, isShowing: false,
+            initDOM() {
+                const grid = document.getElementById('s1-grid');
+                for(let i=0; i<9; i++) {
+                    let btn = document.createElement('button');
+                    btn.className = 'cell-memory';
+                    btn.onclick = () => this.handle(i);
+                    grid.appendChild(btn);
+                    this.cells.push(btn);
+                }
+            },
+            init() {
+                Game.switchScreen('screen-stage1');
+                this.reset();
+            },
+            reset() {
+                this.sequence = [];
+                this.step = 0;
+                this.isShowing = false;
+                this.cells.forEach(c => c.classList.remove('active'));
+                document.getElementById('s1-btn').classList.remove('hidden');
+            },
+            startSequence() {
+                document.getElementById('s1-btn').classList.add('hidden');
+                let len = Game.difficulty === 'EASY' ? 4 : (Game.difficulty === 'NORMAL' ? 5 : 7);
+                let speed = Game.difficulty === 'EASY' ? 800 : (Game.difficulty === 'NORMAL' ? 600 : 400);
+                
+                this.sequence = [];
+                let lastCell = -1;
+                for(let i=0; i<len; i++) {
+                    let next;
+                    do { next = Math.floor(Math.random() * 9); } while(next === lastCell);
+                    this.sequence.push(next);
+                    lastCell = next;
+                }
+                
+                this.step = 0;
+                this.isShowing = true;
+                
+                let i = 0;
+                // تم استبدال setInterval بـ SetTimeout متسلسل للقضاء على مشكلة Zombie Intervals
+                const playNext = () => {
+                    if (i >= this.sequence.length) {
+                        this.isShowing = false;
+                        return; 
+                    }
+                    let cellIdx = this.sequence[i];
+                    this.cells[cellIdx].classList.add('active');
+                    AudioSys.play(400 + (cellIdx*50), 'sine', 0.1);
+
+                    TimerManager.setTimeout(() => {
+                        this.cells[cellIdx].classList.remove('active');
+                        i++;
+                        TimerManager.setTimeout(playNext, speed / 2);
+                    }, speed / 2);
+                };
+                
+                playNext();
+            },
+            handle(index) {
+                if(this.isShowing || this.sequence.length === 0 || Game.state !== 'PLAYING' || Game.isTransitioning) return;
+                
+                let cell = this.cells[index];
+                cell.classList.add('active');
+                AudioSys.beep();
+                TimerManager.setTimeout(() => cell.classList.remove('active'), 200);
+
+                if(index === this.sequence[this.step]) {
+                    this.step++;
+                    if(this.step === this.sequence.length) Game.stageCleared();
+                } else {
+                    Game.takeDamage();
+                }
+            }
+        };
+
+        const Stage2 = {
+            size: 6, cells: [], player: {r:0, c:0}, exit: {r:5, c:5}, mines: [], enemies: [],
+            initDOM() {
+                const grid = document.getElementById('s2-grid');
+                for(let i=0; i<this.size * this.size; i++) {
+                    let div = document.createElement('div');
+                    div.className = 'cell-mine';
+                    grid.appendChild(div);
+                    this.cells.push(div);
+                }
+            },
+            init() {
+                Game.switchScreen('screen-stage2');
+                this.generateLevel();
+                this.resetPlayer();
+                let enemySpeed = Game.difficulty === 'HARD' ? 600 : 900;
+                TimerManager.setInterval(() => this.updateAI(), enemySpeed);
+            },
+            generateLevel() {
+                let numMines = Game.difficulty === 'EASY' ? 3 : (Game.difficulty === 'NORMAL' ? 6 : 9);
+                let numEnemies = Game.difficulty === 'EASY' ? 1 : (Game.difficulty === 'NORMAL' ? 2 : 3);
+                
+                // التأكد من توفر مسار (BFS)
+                do {
+                    this.mines = [];
+                    while(this.mines.length < numMines) {
+                        let r = Math.floor(Math.random() * this.size);
+                        let c = Math.floor(Math.random() * this.size);
+                        if((r===0 && c===0) || (r===5 && c===5)) continue;
+                        if(!this.mines.some(m => m.r === r && m.c === c)) this.mines.push({r, c});
+                    }
+                } while(!this.isSolvable());
+
+                this.enemies = [];
+                while(this.enemies.length < numEnemies) {
+                    let r = Math.floor(Math.random() * this.size);
+                    let c = Math.floor(Math.random() * this.size);
+                    // منع توليد الأعداء فوق اللاعب، أو المخرج، أو قريباً جداً من نقطة البداية لتوفير مهلة عادلة
+                    if((r===0 && c===0) || (r===5 && c===5) || (r + c <= 2)) continue;
+                    
+                    if(!this.mines.some(m => m.r === r && m.c === c) && !this.enemies.some(e => e.r === r && e.c === c)) {
+                        let type = Math.random() > 0.5 ? 'chase' : 'patrol';
+                        this.enemies.push({r, c, type, dr: 1, dc: 0});
+                    }
+                }
+            },
+            isSolvable() {
+                let q = [{r:0, c:0}];
+                let visited = new Set(['0,0']);
+                let dirs = [{dr:-1,dc:0}, {dr:1,dc:0}, {dr:0,dc:-1}, {dr:0,dc:1}];
+                while(q.length > 0) {
+                    let curr = q.shift();
+                    if(curr.r === 5 && curr.c === 5) return true;
+                    for(let d of dirs) {
+                        let nr = curr.r + d.dr, nc = curr.c + d.dc;
+                        if(nr>=0 && nr<this.size && nc>=0 && nc<this.size) {
+                            if(!this.mines.some(m => m.r === nr && m.c === nc) && !visited.has(`${nr},${nc}`)) {
+                                visited.add(`${nr},${nc}`);
+                                q.push({r: nr, c: nc});
+                            }
+                        }
+                    }
+                }
+                return false;
+            },
+            resetPlayer() {
+                this.player = {r:0, c:0};
+                this.render();
+            },
+            render() {
+                for(let r=0; r<this.size; r++) {
+                    for(let c=0; c<this.size; c++) {
+                        let idx = r * this.size + c;
+                        this.cells[idx].className = 'cell-mine';
+                        
+                        if(r === this.exit.r && c === this.exit.c) this.cells[idx].classList.add('cell-exit');
+                        else if(this.mines.some(m => m.r === r && m.c === c)) this.cells[idx].classList.add('cell-mine-trap');
+                        else if(this.enemies.some(e => e.r === r && e.c === c)) this.cells[idx].classList.add('cell-enemy');
+                        
+                        // تغطية بصرية: إذا تواجد اللاعب مع العدو
+                        if(r === this.player.r && c === this.player.c) {
+                            this.cells[idx].classList.add('cell-player');
+                            this.cells[idx].classList.remove('cell-enemy', 'cell-mine-trap');
+                        }
+                    }
+                }
+            },
+            move(dr, dc) {
+                let nr = this.player.r + dr;
+                let nc = this.player.c + dc;
+                if(nr>=0 && nr<this.size && nc>=0 && nc<this.size) {
+                    this.player.r = nr; this.player.c = nc;
+                    AudioSys.beep();
+                    this.checkCollisions();
+                    this.render();
+                }
+            },
+            updateAI() {
+                this.enemies.forEach(e => {
+                    let nextR = e.r, nextC = e.c;
+                    if(e.type === 'patrol') {
+                        let nr = e.r + e.dr, nc = e.c + e.dc;
+                        // تم حماية نقطة البداية والمخرج من دخول الأعداء
+                        let invalid = nr<0 || nr>=this.size || nc<0 || nc>=this.size || 
+                                      this.mines.some(m=>m.r===nr&&m.c===nc) || (nr===5 && nc===5) || (nr===0 && nc===0);
+                        if(invalid) { e.dr *= -1; e.dc *= -1; } 
+                        else { nextR = nr; nextC = nc; }
+                    } else if(e.type === 'chase') {
+                        if(Math.abs(this.player.r - e.r) > Math.abs(this.player.c - e.c)) {
+                            let nr = e.r + (this.player.r > e.r ? 1 : -1);
+                            let invalid = this.mines.some(m=>m.r===nr&&m.c===e.c) || (nr===5 && e.c===5) || (nr===0 && e.c===0);
+                            if(!invalid) nextR = nr;
+                        } else {
+                            let nc = e.c + (this.player.c > e.c ? 1 : -1);
+                            let invalid = this.mines.some(m=>m.r===e.r&&m.c===nc) || (e.r===5 && nc===5) || (e.r===0 && nc===0);
+                            if(!invalid) nextC = nc;
+                        }
+                    }
+                    e.r = nextR; e.c = nextC;
+                });
+                this.checkCollisions();
+                this.render();
+            },
+            checkCollisions() {
+                if(Game.isTransitioning) return;
+                
+                // الفحص 1: الاصطدام بالأعداء أو الألغام أولاً لمنع الفوز الوهمي في المخرج
+                if(this.mines.some(m => m.r === this.player.r && m.c === this.player.c) || 
+                   this.enemies.some(e => e.r === this.player.r && e.c === this.player.c)) {
+                    Game.takeDamage();
+                    return;
+                }
+                
+                // الفحص 2: الفوز
+                if(this.player.r === this.exit.r && this.player.c === this.exit.c) {
+                    Game.stageCleared();
+                }
+            }
+        };
+
+        const Stage3 = {
+            size: 5, cells: [], p1: {r:0, c:0}, p2: {r:0, c:4}, exit1: {r:4, c:4}, exit2: {r:4, c:0},
+            walls: [],
+            initDOM() {
+                const grid = document.getElementById('s3-grid');
+                for(let i=0; i<this.size * this.size; i++) {
+                    let div = document.createElement('div');
+                    div.className = 'cell-sync';
+                    grid.appendChild(div);
+                    this.cells.push(div);
+                }
+            },
+            init() {
+                Game.switchScreen('screen-stage3');
+                
+                // إعادة هيكلة جدران المرحلة الثالثة (الحالة Hard تم حلها بالكامل وجعلها قابلة للعب)
+                this.walls = [ {r:2, c:0}, {r:2, c:1}, {r:2, c:3}, {r:2, c:4} ]; 
+                if(Game.difficulty === 'HARD') {
+                    // تم اختيار ممرات الشطرنج العكسية لإنشاء لغز دقيق وتجنب سد طريق المنتصف (2,2)
+                    this.walls.push({r:1, c:1}, {r:1, c:3}, {r:3, c:1}, {r:3, c:3}); 
+                }
+                
+                this.resetPlayer();
+            },
+            resetPlayer() {
+                this.p1 = {r:0, c:0};
+                this.p2 = {r:0, c:4};
+                this.render();
+            },
+            render() {
+                for(let r=0; r<this.size; r++) {
+                    for(let c=0; c<this.size; c++) {
+                        let idx = r * this.size + c;
+                        this.cells[idx].className = 'cell-sync';
+                        
+                        if(this.walls.some(w => w.r === r && w.c === c)) this.cells[idx].classList.add('cell-wall');
+                        else if(r === this.exit1.r && c === this.exit1.c) this.cells[idx].classList.add('cell-exit');
+                        else if(r === this.exit2.r && c === this.exit2.c) this.cells[idx].classList.add('cell-exit');
+                        
+                        let hasP1 = (r === this.p1.r && c === this.p1.c);
+                        let hasP2 = (r === this.p2.r && c === this.p2.c);
+                        
+                        if(hasP1 && hasP2) this.cells[idx].classList.add('cell-sync-overlap');
+                        else if(hasP1) this.cells[idx].classList.add('cell-p1');
+                        else if(hasP2) this.cells[idx].classList.add('cell-p2');
+                    }
+                }
+            },
+            move(dr, dc) {
+                let np1 = { r: this.p1.r + dr, c: this.p1.c + dc };
+                let np2 = { r: this.p2.r + dr, c: this.p2.c - dc }; // الانعكاس المعاكس أفقياً للحركة
+
+                let p1Out = np1.r<0 || np1.r>=this.size || np1.c<0 || np1.c>=this.size;
+                let p2Out = np2.r<0 || np2.r>=this.size || np2.c<0 || np2.c>=this.size;
+                
+                let p1Hit = this.walls.some(w => w.r === np1.r && w.c === np1.c) || p1Out;
+                let p2Hit = this.walls.some(w => w.r === np2.r && w.c === np2.c) || p2Out;
+
+                if(!p1Hit && !p2Hit) {
+                    this.p1 = np1; this.p2 = np2;
+                    AudioSys.beep();
+                    this.render();
+                    
+                    if(this.p1.r === this.exit1.r && this.p1.c === this.exit1.c && 
+                       this.p2.r === this.exit2.r && this.p2.c === this.exit2.c) {
+                        Game.stageCleared();
+                    }
+                } else {
+                    Game.takeDamage();
+                }
+            }
+        };
+
+        // التهيئة وبدء اللعبة
+        window.onload = () => Game.init();
+
+    </script>
+</body>
+</html>
